@@ -1,33 +1,38 @@
 import os
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 
-import aiosmtplib
+import httpx
 from dotenv import load_dotenv
 
 load_dotenv()
 
-SMTP_EMAIL = os.getenv("SMTP_EMAIL")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
-SMTP_TIMEOUT = 20
+BREVO_API_KEY = os.getenv("BREVO_API_KEY")
+BREVO_SENDER_EMAIL = os.getenv("BREVO_SENDER_EMAIL", "vigipro.co@gmail.com")
+BREVO_SENDER_NAME = os.getenv("BREVO_SENDER_NAME", "Tecweb")
+BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
+HTTP_TIMEOUT = 15
 
 
 async def send_email(to_email: str, body: str, subject: str = "Mensaje desde FastAPI") -> dict:
-    msg = MIMEMultipart()
-    msg['From'] = SMTP_EMAIL
-    msg['To'] = to_email
-    msg['Subject'] = subject
-    msg.attach(MIMEText(body, 'plain'))
+    if not BREVO_API_KEY:
+        raise RuntimeError("BREVO_API_KEY no configurada")
 
-    await aiosmtplib.send(
-        msg,
-        hostname="smtp.gmail.com",
-        port=587,
-        start_tls=True,
-        username=SMTP_EMAIL,
-        password=SMTP_PASSWORD,
-        timeout=SMTP_TIMEOUT,
-    )
+    payload = {
+        "sender": {"name": BREVO_SENDER_NAME, "email": BREVO_SENDER_EMAIL},
+        "to": [{"email": to_email}],
+        "subject": subject,
+        "textContent": body,
+    }
+    headers = {
+        "api-key": BREVO_API_KEY,
+        "content-type": "application/json",
+        "accept": "application/json",
+    }
+
+    async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+        response = await client.post(BREVO_API_URL, json=payload, headers=headers)
+
+    if response.status_code >= 400:
+        raise RuntimeError(f"Brevo respondió {response.status_code}: {response.text}")
 
     return {"status": "success", "message": f"Correo enviado a {to_email}"}
 
